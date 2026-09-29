@@ -10,10 +10,13 @@ unsigned long long dense_mm_threshold;
 bool fallback = true;
 bool no_features = false;
 
+bool force_mkl_dense = false;
+bool force_mkl_sparse = false;
+
 int get_total_sparse_buckets() { return ss_upper[0]; }
 
 void set_to_all_dense() {
-  std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t)0);
+  std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t) 0);
 }
 
 MM_ALG get_alg(const int left_bucket, const int right_bucket) {
@@ -34,28 +37,28 @@ static void init_arrays(int nb) {
   ri_upper = std::make_unique_for_overwrite<uint8_t[]>(num_buckets + 1);
 }
 
-bool init_decision_thresholds(const char* thres_exec_method, const int type,
-                              const char* platform) {
+bool init_decision_thresholds(const char *thres_exec_method, const int type,
+                              const char *platform) {
   if (strcmp(thres_exec_method, "sparse") == 0) {
     init_arrays(DEFAULT_NUM_BUCKETS);
     std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1,
               (uint8_t)(num_buckets + 1));
-    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t)0);
+    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t) 0);
     left_dense_threshold = 0;
     dense_mm_threshold = 0;
     fallback = false;
     return true;
   } else if (strcmp(thres_exec_method, "dense_bm_inner_kernel") == 0) {
     init_arrays(DEFAULT_NUM_BUCKETS);
-    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t)0);
-    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t)0);
+    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t) 0);
+    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t) 0);
     left_dense_threshold = 0;
     dense_mm_threshold = 0;
     fallback = false;
     return true;
   } else if (strcmp(thres_exec_method, "dense_right_spmm_inner_kernel") == 0) {
     init_arrays(DEFAULT_NUM_BUCKETS);
-    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t)0);
+    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t) 0);
     std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1,
               (uint8_t)(num_buckets + 1));
     left_dense_threshold = num_buckets + 1;
@@ -64,8 +67,8 @@ bool init_decision_thresholds(const char* thres_exec_method, const int type,
     return true;
   } else if (strcmp(thres_exec_method, "dense_left_spmm_inner_kernel") == 0) {
     init_arrays(DEFAULT_NUM_BUCKETS);
-    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t)0);
-    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t)0);
+    std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1, (uint8_t) 0);
+    std::fill(ri_upper.get(), ri_upper.get() + num_buckets + 1, (uint8_t) 0);
     left_dense_threshold = num_buckets + 1;
     dense_mm_threshold = 0;
     fallback = false;
@@ -73,13 +76,13 @@ bool init_decision_thresholds(const char* thres_exec_method, const int type,
   }
 
   const std::string params_base = resolve_path_near_lib(
-      reinterpret_cast<void*>(&init_decision_thresholds), "../parameters",
-      "parameters");
+    reinterpret_cast<void *>(&init_decision_thresholds), "../parameters",
+    "parameters");
   const std::string type_dir = (type == 0) ? "/float" : "/double";
   const std::string bucket_dir = use_log_buckets
-      ? ("log_" + std::to_string(DEFAULT_NUM_BUCKETS) + "_c"
-         + std::to_string(bucket_log_curvature))
-      : ("linear_" + std::to_string(DEFAULT_NUM_BUCKETS));
+                                   ? ("log_" + std::to_string(DEFAULT_NUM_BUCKETS) + "_c"
+                                      + std::to_string(bucket_log_curvature))
+                                   : ("linear_" + std::to_string(DEFAULT_NUM_BUCKETS));
   const std::string thres_path =
       params_base + "/" + platform + type_dir + "/" + bucket_dir
       + "/decision_thresholds.txt";
@@ -90,9 +93,9 @@ bool init_decision_thresholds(const char* thres_exec_method, const int type,
 
   if (!inputFile.is_open()) {
     std::cerr << "Error: decision threshold file not found: " << thres_path
-              << "\n  (use_log_buckets=" << use_log_buckets
-              << ", bucket_log_curvature=" << bucket_log_curvature
-              << ", num_buckets=" << DEFAULT_NUM_BUCKETS << ")\n";
+        << "\n  (use_log_buckets=" << use_log_buckets
+        << ", bucket_log_curvature=" << bucket_log_curvature
+        << ", num_buckets=" << DEFAULT_NUM_BUCKETS << ")\n";
     return false;
   }
 
@@ -140,6 +143,14 @@ bool init_decision_thresholds(const char* thres_exec_method, const int type,
     dense_mm_threshold = 0;
   } else if (strcmp(thres_exec_method, "no_features") == 0) {
     no_features = true;
+  } else if (strcmp(thres_exec_method, "FORCE_MKL_DENSE") == 0) {
+    fallback = true;
+    force_mkl_dense = true;
+    force_mkl_sparse = false;
+  } else if (strcmp(thres_exec_method, "FORCE_MKL_SPARSE") == 0) {
+    fallback = true;
+    force_mkl_dense = false;
+    force_mkl_sparse = true;
   }
 
   return true;
@@ -150,10 +161,10 @@ void free_bucket_info() {
   ri_upper.reset();
 }
 
-bool read_tile_sizes(const int type, const char* platform, int& slice_height,
-                     int& slice_length, int& tile_size_l2, int& tile_size_l3) {
+bool read_tile_sizes(const int type, const char *platform, int &slice_height,
+                     int &slice_length, int &tile_size_l2, int &tile_size_l3) {
   const std::string params_base = resolve_path_near_lib(
-      reinterpret_cast<void*>(&read_tile_sizes), "../parameters", "parameters");
+    reinterpret_cast<void *>(&read_tile_sizes), "../parameters", "parameters");
   const std::string type_dir = (type == 0) ? "/float" : "/double";
   const std::string tile_path =
       params_base + "/" + platform + type_dir + "/tile_sizes.txt";
@@ -185,9 +196,9 @@ bool read_tile_sizes(const int type, const char* platform, int& slice_height,
         } else if (key == "slice_height") {
           slice_height = std::stoi(value_str);
         }
-      } catch (const std::invalid_argument& e) {
+      } catch (const std::invalid_argument &e) {
         std::cerr << "Invalid number format for key '" << key
-                  << "': " << value_str << std::endl;
+            << "': " << value_str << std::endl;
       }
     }
   }

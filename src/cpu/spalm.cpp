@@ -103,8 +103,9 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     fallback = false;
   }
 
-  if (total_dense_mm_cost > (unsigned long long)M * K * N * 0.8 && fallback) {
+  if (force_mkl_dense || (total_dense_mm_cost > (unsigned long long)M * K * N * 0.8 && fallback)) {
     // Fallback to mkl
+    std::cout << "[DEBUG] force_mkl_dense: " << force_mkl_dense << std::endl;
     std::cout << "Fallback: MKL dense-dense" << std::endl;
     start = std::chrono::high_resolution_clock::now();
     auto R = std::make_unique<T[]>(M * K);
@@ -157,7 +158,9 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     end = std::chrono::high_resolution_clock::now();
     print_time("Fallback MM: ", end - start);
     mkl_free_buffers();
-  } else if (do_sparse_mm && !do_dense_mm && fallback) {
+  } else if (force_mkl_sparse || (do_sparse_mm && !do_dense_mm && fallback)) {
+    // Fallback to mkl
+    std::cout << "[DEBUG] force_mkl_sparse: " << force_mkl_sparse << std::endl;
     std::cout << "Fallback: MKL sparse-sparse" << std::endl;
     void* handle = dlopen(
         resolve_path_near_lib(reinterpret_cast<void*>(&spalm_lib_anchor),
