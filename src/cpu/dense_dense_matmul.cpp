@@ -151,7 +151,7 @@ void dense_dense_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm,
   auto R_bm = make_aligned_unique<BIT_DTYPE>(R_bm_size);
 
   auto mem_alloc_end = std::chrono::high_resolution_clock::now();
-  print_time("Memory allocation time: ", mem_alloc_end - mem_alloc_start);
+  print_time("[dense-dense-memory-allocation-time]", mem_alloc_end - mem_alloc_start);
 
   std::vector<aligned_unique_ptr<T>> S_packed_mem_threads(threads);
   std::vector<aligned_unique_ptr<BIT_DTYPE>> S_bm_threads(threads);
@@ -230,8 +230,8 @@ void dense_dense_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm,
   }
 
   auto mm_end = std::chrono::high_resolution_clock::now();
-  print_time("Dense MM time: ", mm_end - mem_alloc_end);
-  print_time("Total dense MM time: ", mm_end - dense_mm_start);
+  print_time("[dense-dense-dense-mm-time]", mm_end - mem_alloc_end);
+  print_time("[dense-dense-total-dense-mm-time]", mm_end - dense_mm_start);
 }
 
 void inline sparse_dense_inner_kernel_iter(const subrow& sr,

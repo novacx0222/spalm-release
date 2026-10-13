@@ -35,3 +35,8 @@ debug:
 	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) -B spalm OPT_LEVEL=-O0 MKL_ROOT="$(MKL_ROOT)" MKL_LIBDIR="$(MKL_LIBDIR)"
 clean:
 	rm -f $(SPALM_OBJS) $(BIN_DIR)/spalm.so $(BIN_DIR)/run_baseline.so
+
+# Recompile when timing helpers or forced-dispatch policy changes.
+$(SPALM_OBJS): include/util.h
+$(BIN_DIR)/spalm.o: include/method_dispatch.h
+$(BIN_DIR)/run_baseline.so: include/util.h

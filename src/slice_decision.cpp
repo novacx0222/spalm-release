@@ -39,6 +39,10 @@ static void init_arrays(int nb) {
 
 bool init_decision_thresholds(const char *thres_exec_method, const int type,
                               const char *platform) {
+  // Reset before early-return modes as well as file-backed configurations.
+  force_mkl_dense = false;
+  force_mkl_sparse = false;
+  no_features = false;
   if (strcmp(thres_exec_method, "sparse") == 0) {
     init_arrays(DEFAULT_NUM_BUCKETS);
     std::fill(ss_upper.get(), ss_upper.get() + num_buckets + 1,

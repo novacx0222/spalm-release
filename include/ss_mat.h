@@ -361,9 +361,11 @@ void create_slice_csc(ss_matrix<T>& ssm, const int threads) {
 template <typename T>
 void csr_to_ss_matrix(int* row_ptrs, int* col_idxs, T* vals, const int rows,
                       const int cols, const int sl, const int sh,
-                      ss_matrix<T>& ssm, const int threads) {
+                      ss_matrix<T>& ssm, const int threads, int timing_side = 0) {
   std::chrono::time_point<std::chrono::high_resolution_clock> end;
   auto create_start = std::chrono::high_resolution_clock::now();
+  auto stage_start = create_start;
+  const std::string side = "[" + std::to_string(timing_side) + "-slice-";
 
   // Set dimensions
   ssm.sl = sl;
@@ -379,17 +381,23 @@ void csr_to_ss_matrix(int* row_ptrs, int* col_idxs, T* vals, const int rows,
   // Step 1: Create subrow CSR
   create_subrow_csr(ssm, threads);
   end = std::chrono::high_resolution_clock::now();
-  print_time("Subrow CSR creation time: ", end - create_start);
+  print_time(side + "subrow-csr-cumulative]", end - create_start);
+  print_time(side + "subrow-csr]", end - stage_start);
+  stage_start = end;
 
   // Step 2: Create subrow CSC (transpose)
   create_subrow_csc(ssm, threads);
   end = std::chrono::high_resolution_clock::now();
-  print_time("Subrow CSC creation time: ", end - create_start);
+  print_time(side + "subrow-csc-cumulative]", end - create_start);
+  print_time(side + "subrow-csc]", end - stage_start);
+  stage_start = end;
 
   // Step 3: Create slice CSC
   create_slice_csc(ssm, threads);
   end = std::chrono::high_resolution_clock::now();
-  print_time("Slice CSC creation time: ", end - create_start);
+  print_time(side + "csc-cumulative]", end - create_start);
+  print_time(side + "csc]", end - stage_start);
+  stage_start = end;
 }
 
 template <typename T>

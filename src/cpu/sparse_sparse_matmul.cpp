@@ -219,7 +219,7 @@ inline void transpose_s_matrix_vanilla(const int thread_idx, const int threads,
     thread_col_offsets = std::make_unique_for_overwrite<int[]>(threads * K);
 
     end = std::chrono::high_resolution_clock::now();
-    print_time("Memory allocation time: ", end - start);
+    print_time("[sparse-sparse-memory-allocation-time]", end - start);
   }
 
 #pragma omp barrier
@@ -250,7 +250,7 @@ inline void transpose_s_matrix_vanilla(const int thread_idx, const int threads,
       s_col_idxs[k + 1] += s_col_idxs[k];
     }
     end = std::chrono::high_resolution_clock::now();
-    print_time("Stuff up to counting: ", end - start);
+    print_time("[sparse-sparse-stuff-up-to-counting]", end - start);
   }
 
 #pragma omp barrier
@@ -314,15 +314,15 @@ void sparse_sparse_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm, T* ret,
                                  S_T_vals);
     }
     end = std::chrono::high_resolution_clock::now();
-    print_time("S transpose time: ", end - sparse_matmul_start);
+    print_time("[sparse-sparse-s-transpose-time]", end - sparse_matmul_start);
 
     start = std::chrono::high_resolution_clock::now();
     spgemm_rows_dense_result_vanilla(N, R_ssm, S_T_col_idxs.get(),
                                      S_T_row_idxs.get(), S_T_vals.get(), ret,
                                      threads);
     end = std::chrono::high_resolution_clock::now();
-    print_time("Sparse MM time: ", end - start);
-    print_time("Total Sparse MM time: ", end - sparse_matmul_start);
+    print_time("[sparse-sparse-sparse-mm-time]", end - start);
+    print_time("[sparse-sparse-total-sparse-mm-time]", end - sparse_matmul_start);
     return;
   }
 
@@ -372,7 +372,7 @@ void sparse_sparse_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm, T* ret,
   T* s_vals = S_T_vals.get();
   int* s_agg_idxs = S_T_row_idxs.get();
   end = std::chrono::high_resolution_clock::now();
-  print_time("S_T count + alloc: ", end - transpose_start);
+  print_time("[sparse-sparse-s_t-count-alloc]", end - transpose_start);
 
   // Fill phase: iterate over S's slice CSC to fill transposed data
 #pragma omp parallel for num_threads(threads)
@@ -413,10 +413,10 @@ void sparse_sparse_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm, T* ret,
     }
   }
   end = std::chrono::high_resolution_clock::now();
-  print_time("S_T copy + transpose: ", end - start);
+  print_time("[sparse-sparse-s_t-copy-transpose]", end - start);
 
   end = std::chrono::high_resolution_clock::now();
-  print_time("S transpose time: ", end - transpose_start);
+  print_time("[sparse-sparse-s-transpose-time]", end - transpose_start);
 
   start = std::chrono::high_resolution_clock::now();
   if (!sparse_output) {
@@ -442,7 +442,7 @@ void sparse_sparse_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm, T* ret,
       }
     }
     end = std::chrono::high_resolution_clock::now();
-    print_time("R subrow labeling time: ", end - start);
+    print_time("[sparse-sparse-r-subrow-labeling-time]", end - start);
 
     spgemm_rows_dense_result(R_ssm, R_subrow_buckets.get(), S_T_row_idxs.get(),
                              S_T_vals.get(), S_T_col_idxs.get(), N, ret,
@@ -451,8 +451,8 @@ void sparse_sparse_matmul(ss_matrix<T>& R_ssm, ss_matrix<T>& S_ssm, T* ret,
     // TODO: sparse output path
   }
   end = std::chrono::high_resolution_clock::now();
-  print_time("Sparse MM time: ", end - start);
-  print_time("Total Sparse MM time: ", end - sparse_matmul_start);
+  print_time("[sparse-sparse-sparse-mm-time]", end - start);
+  print_time("[sparse-sparse-total-sparse-mm-time]", end - sparse_matmul_start);
 }
 
   template void sparse_sparse_matmul<float>(ss_matrix<float>& R_ssm,

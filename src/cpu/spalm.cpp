@@ -1,3 +1,4 @@
+#include "method_dispatch.h"
 #include <algorithm>
 #include "path_utils.h"
 #include <chrono>
@@ -41,12 +42,12 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
       total_start, e2e_start;
   e2e_start = std::chrono::high_resolution_clock::now();
   csr_to_ss_matrix(Ri, Rj, Rv, M, K, slice_length, R_ik_slice_height, R_ssm,
-                   threads);
+                   threads, 1);
   csr_to_ss_matrix(Si, Sj, Sv, N, K, slice_length, S_ik_slice_height, S_ssm,
-                   threads);
+                   threads, 2);
 
   end = std::chrono::high_resolution_clock::now();
-  print_time("Total ss_matrix init time: ", end - e2e_start);
+  print_time("[slice-prepare-total]", end - e2e_start);
 
   total_start = std::chrono::high_resolution_clock::now();
 
@@ -77,7 +78,7 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
   std::cout << "SPARSE-DENSE MM cost: " << sparse_dense_mm_cost << std::endl;
   std::cout << "DENSE-SPARSE MM cost: " << dense_sparse_mm_cost << std::endl;
   std::cout << "DENSE-DENSE MM cost: " << dense_dense_mm_cost << std::endl;
-  print_time("MM check time: ", end - total_start);
+  print_time("[mm-select-total]", end - total_start);
 
   if (total_dense_mm_cost) {
     do_dense_mm = true;
@@ -103,7 +104,11 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     fallback = false;
   }
 
-  if (force_mkl_dense || (total_dense_mm_cost > (unsigned long long)M * K * N * 0.8 && fallback)) {
+  const auto backend = spalm_dispatch::select(
+      force_mkl_dense, force_mkl_sparse, fallback,
+      total_dense_mm_cost > (unsigned long long)M * K * N * 0.8,
+      do_sparse_mm && !do_dense_mm);
+  if (backend == spalm_dispatch::Backend::MklDense) {
     // Fallback to mkl
     std::cout << "[DEBUG] force_mkl_dense: " << force_mkl_dense << std::endl;
     std::cout << "Fallback: MKL dense-dense" << std::endl;
@@ -111,7 +116,7 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     auto R = std::make_unique<T[]>(M * K);
     auto S = std::make_unique<T[]>(N * K);
     end = std::chrono::high_resolution_clock::now();
-    print_time("Mem allocation time for MKL: ", end - start);
+    print_time("[mkl-dense-input-allocate]", end - start);
 
     start = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for num_threads(threads)
@@ -146,7 +151,7 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
                   const int))dlsym(handle, "run_baseline");
 
     end = std::chrono::high_resolution_clock::now();
-    print_time("Matrix initialization for MKL: ", end - start);
+    print_time("[mkl-dense-input-fill]", end - start);
 
     start = std::chrono::high_resolution_clock::now();
     /*
@@ -156,9 +161,12 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     run_baseline(type, "MKL dense-dense", Ri, Rj, (void*)Rv, (void*)R.get(), Si,
                  Sj, (void*)Sv, (void*)S.get(), (void*)ret, M, K, N, threads);
     end = std::chrono::high_resolution_clock::now();
-    print_time("Fallback MM: ", end - start);
+    print_time("[mkl-call-total]", end - start);
+    const auto dense_release_begin = std::chrono::high_resolution_clock::now();
     mkl_free_buffers();
-  } else if (force_mkl_sparse || (do_sparse_mm && !do_dense_mm && fallback)) {
+    R.reset(); S.reset();
+    print_time("[mkl-dense-input-deallocate]", std::chrono::high_resolution_clock::now() - dense_release_begin);
+  } else if (backend == spalm_dispatch::Backend::MklSparse) {
     // Fallback to mkl
     std::cout << "[DEBUG] force_mkl_sparse: " << force_mkl_sparse << std::endl;
     std::cout << "Fallback: MKL sparse-sparse" << std::endl;
@@ -182,7 +190,7 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
     run_baseline(type, "MKL sparse-sparse", Ri, Rj, (void*)Rv, NULL, Si, Sj,
                  (void*)Sv, NULL, (void*)ret, M, K, N, threads);
     end = std::chrono::high_resolution_clock::now();
-    print_time("Fallback MM: ", end - start);
+    print_time("[mkl-call-total]", end - start);
   } else {
     std::cout << std::endl;
     if (do_sparse_mm) {
@@ -198,8 +206,12 @@ void spalm_matmul(const int type, int* Ri, int* Rj, T* Rv, int* Si, int* Sj,
 
   end = std::chrono::high_resolution_clock::now();
   std::cout << std::endl;
-  print_time("Total MM time: ", end - total_start);
-  print_time("E2E MM time: ", end - e2e_start);
+  print_time("[mm-total]", end - total_start);
+  print_time("[slice-mm-total]", end - e2e_start);
+  const auto release_begin = std::chrono::high_resolution_clock::now();
+  R_ssm = ss_matrix<T>{};
+  S_ssm = ss_matrix<T>{};
+  print_time("[slice-deallocate]", std::chrono::high_resolution_clock::now() - release_begin);
 }
 
 extern "C" void spalm(int type, int* Ri, int* Rj, void* Rv, int* Si,
@@ -207,6 +219,7 @@ extern "C" void spalm(int type, int* Ri, int* Rj, void* Rv, int* Si,
                              const int N, bool sparse_result,
                              void* ret, int* reti, int* retj, void* retv,
                              int n, const char** keys, const char** vals) {
+  const auto initialize_begin = std::chrono::high_resolution_clock::now();
   auto get_str = [&](const char* key, const char* def) -> const char* {
     for (int i = 0; i < n; i++)
       if (strcmp(keys[i], key) == 0) return vals[i];
@@ -268,6 +281,8 @@ extern "C" void spalm(int type, int* Ri, int* Rj, void* Rv, int* Si,
   }
   std::cout << std::endl;
 
+  print_time("[library-initialize]", std::chrono::high_resolution_clock::now() - initialize_begin);
+
   if (type == 0) {
     spalm_matmul(type, Ri, Rj, (float*)Rv, Si, Sj, (float*)Sv, M, K, N,
                   slice_length, tile_size_l2, tile_size_l3, sparse_result,
@@ -278,5 +293,7 @@ extern "C" void spalm(int type, int* Ri, int* Rj, void* Rv, int* Si,
                   (double*)ret, reti, retj, (double*)retv, threads);
   }
 
+  const auto thresholds_release_begin = std::chrono::high_resolution_clock::now();
   free_bucket_info();
+  print_time("[thresholds-deallocate]", std::chrono::high_resolution_clock::now() - thresholds_release_begin);
 }
